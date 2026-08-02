@@ -1,0 +1,69 @@
+name: Equisetum Android Native Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main", "master" ]
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    name: Equisetum Android (aarch64)
+    runs-on: ubuntu-24.04
+
+    steps:
+    - name: Clone Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Set up Android NDK Environment
+      run: |
+        NDKV="27.2.12479018"
+        ANDROID_ROOT=/usr/local/lib/android
+        ANDROID_SDK_ROOT=$ANDROID_ROOT/sdk
+        SDKMANAGER=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager
+        
+        echo "y" | $SDKMANAGER "ndk;$NDKV"
+        ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/$NDKV
+        ANDROID_NDK_BIN=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin
+        
+        echo "ANDROID_NDK_BIN=$ANDROID_NDK_BIN" >> $GITHUB_ENV
+        echo "TOOLCHAIN_PREFIX=$ANDROID_NDK_BIN/aarch64-linux-android29-" >> $GITHUB_ENV
+
+    - name: Ensure NNUE File and Incbin Structure
+      run: |
+        # Ensure the NNUE weight file specified in the Makefile is present
+        NNUE_NAME="equi_7b_1024x2F_7Bv8_430.nnue"
+        if [ ! -f "$NNUE_NAME" ]; then
+          FOUND_NNUE=$(find . -name "*.nnue" | head -n 1)
+          if [ -n "$FOUND_NNUE" ]; then
+            echo "Found NNUE file at $FOUND_NNUE. Copying to root as $NNUE_NAME..."
+            cp "$FOUND_NNUE" ./$NNUE_NAME
+          else
+            echo "ERROR: The required .nnue file is missing from your workspace!"
+            exit 1
+          fi
+        fi
+
+    - name: Compile Equisetum natively for Android
+      run: |
+        export PATH=${{ env.ANDROID_NDK_BIN }}:$PATH
+        
+        # Clean previous builds if any
+        make clean
+        
+        # We override CXX, flags, and remove host-specific architecture targets like -march=native
+        make \
+          CXX=clang++ \
+          CC_FLAGS="-Wall -std=c++11 -O3 -flto -pthread -fno-exceptions -D_INCBIN_ -DEVALFILE=\\\"equi_7b_1024x2F_7Bv8_430.nnue\\\" -target aarch64-linux-android29 -mcpu=cortex-a72" \
+          LD_FLAGS="-pthread -flto -target aarch64-linux-android29 -static" \
+          EXE=Equisetum_Android_ARM64
+
+    - name: Upload Binary Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Equisetum-Android-ARM64
+        path: Equisetum_Android_ARM64
