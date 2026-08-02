@@ -35,17 +35,33 @@ jobs:
 
     - name: Ensure NNUE File and Incbin Structure
       run: |
-        # Ensure the NNUE weight file specified in the Makefile is present
         NNUE_NAME="equi_7b_1024x2F_7Bv8_430.nnue"
+        
+        # 1. Check if the file is already in the root directory
         if [ ! -f "$NNUE_NAME" ]; then
+          
+          # 2. Check if it's somewhere else in the repository
           FOUND_NNUE=$(find . -name "*.nnue" | head -n 1)
+          
           if [ -n "$FOUND_NNUE" ]; then
             echo "Found NNUE file at $FOUND_NNUE. Copying to root as $NNUE_NAME..."
             cp "$FOUND_NNUE" ./$NNUE_NAME
           else
-            echo "ERROR: The required .nnue file is missing from your workspace!"
-            exit 1
+            # 3. If missing completely, download it
+            echo "NNUE file not found locally. Downloading..."
+            
+            # ---> REPLACE THE URL BELOW WITH YOUR ACTUAL DIRECT DOWNLOAD LINK <---
+            curl -L -o "$NNUE_NAME" "YOUR_DIRECT_DOWNLOAD_LINK_HERE"
+            
+            # Verify the download was successful and the file isn't empty
+            if [ ! -s "$NNUE_NAME" ]; then
+              echo "ERROR: The NNUE file download failed. Please provide a valid direct URL."
+              exit 1
+            fi
+            echo "Successfully downloaded $NNUE_NAME."
           fi
+        else
+          echo "$NNUE_NAME already exists in the workspace."
         fi
 
     - name: Compile Equisetum natively for Android
@@ -58,7 +74,7 @@ jobs:
         # We override CXX, flags, and remove host-specific architecture targets like -march=native
         make \
           CXX=clang++ \
-          CC_FLAGS="-Wall -std=c++11 -O3 -flto -pthread -fno-exceptions -D_INCBIN_ -DEVALFILE=\\\"equi_7b_1024x2F_7Bv8_430.nnue\\\" -target aarch64-linux-android29 -mcpu=cortex-a72" \
+          CC_FLAGS="-Wall -std=c++11 -O3 -flto -pthread -fno-exceptions -D_INCBIN_ -DEVALFILE=\\\"$NNUE_NAME\\\" -target aarch64-linux-android29 -mcpu=cortex-a72" \
           LD_FLAGS="-pthread -flto -target aarch64-linux-android29 -static" \
           EXE=Equisetum_Android_ARM64
 
